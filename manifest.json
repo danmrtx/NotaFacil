@@ -1,0 +1,17 @@
+{
+  "name": "NotaFácil NF",
+  "short_name": "NotaFácil",
+  "description": "Sistema inteligente para leitura, fragmentação de itens e rateio de Notas Fiscais.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ea580c",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

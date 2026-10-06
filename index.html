@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NotaFácil (NF)</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ea580c">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+    <div class="max-w-7xl mx-auto bg-white rounded-xl shadow-lg p-8">
+        <div class="mb-6 border-b pb-4">
+            <h1 class="text-3xl font-bold text-gray-800"><span class="text-orange-600">N</span>ota<span class="text-orange-600">F</span>ácil</h1>
+            <p class="text-gray-500 mt-1">Sistema inteligente para leitura, fragmentação de itens e rateio de Notas Fiscais.</p>
+        </div>
+        
+        <div class="mb-8 bg-orange-50 p-6 rounded-lg border border-orange-100">
+            <h2 class="text-lg font-semibold text-orange-800 mb-3">1. Upload da Nota Fiscal (PDF)</h2>
+            <input type="file" id="pdfInput" accept="application/pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-orange-600 file:text-white hover:file:bg-orange-700 cursor-pointer" />
+        </div>
+
+        <div id="infoSection" class="hidden mb-6 p-4 bg-gray-100 rounded-lg">
+            <p class="text-gray-700 font-medium"><strong>Empresa Emissora:</strong> <span id="companyName" class="text-orange-600">Não identificada</span></p>
+            <p class="text-gray-700 font-medium mt-1"><strong>Nota emitida para:</strong> <span id="destinatarioName" class="text-orange-600">Não identificada</span></p>
+            <p class="text-gray-700 font-medium mt-1"><strong>Número da NF:</strong> <span id="nfNumber" class="text-orange-600">Não identificado</span></p>
+        </div>
+
+        <div id="tableContainer" class="hidden mb-8 overflow-x-auto">
+            <h2 class="text-lg font-semibold text-gray-800 mb-3">2. Itens da Nota e Rateio</h2>
+            <table class="min-w-full divide-y divide-gray-200 border rounded-lg">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PROD/ITEM</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">QNT</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VALOR UNI</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TOTAL</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CHAMADO</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RATEIO</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OBS</th>
+                    </tr>
+                </thead>
+                <tbody id="itemsTableBody" class="bg-white divide-y divide-gray-200"></tbody>
+            </table>
+            <div class="mt-6 flex justify-end">
+                <button id="generatePdfBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded shadow transition duration-200">
+                    3. Gerar PDF de Rateio
+                </button>
+            </div>
+        </div>
+
+        <div id="loader" class="hidden text-center py-10">
+            <p class="mt-2 text-gray-600 font-medium">Lendo arquivo e extraindo dados...</p>
+        </div>
+    </div>
+
+    <!-- Footer de Créditos -->
+    <footer class="mt-8 text-center text-sm text-gray-500">
+        Sistema desenvolvido por Dan Martins. <a href="http://github.com/danmrtx" target="_blank" class="text-orange-600 hover:underline">Github</a>
+    </footer>
+
+    <script>
+        document.getElementById('pdfInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('loader').classList.remove('hidden');
+            document.getElementById('tableContainer').classList.add('hidden');
+            document.getElementById('infoSection').classList.add('hidden');
+            document.getElementById('itemsTableBody').innerHTML = '';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const text = await extractTextFromPDF(arrayBuffer);
+                processNotaFiscal(text);
+            } catch (error) {
+                console.error(error);
+                alert("Erro ao ler o PDF.");
+            } finally {
+                document.getElementById('loader').classList.add('hidden');
+            }
+        });
+
+        async function extractTextFromPDF(pdfData) {
+            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+            const pdf = await loadingTask.promise;
+            let fullText = "";
+
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const items = textContent.items;
+
+                // Agrupa com tolerância de Y para mesma linha (ex: 5 pontos)
+                const lines = [];
+                items.forEach(item => {
+                    const y = item.transform[5];
+                    const x = item.transform[4];
+                    let foundLine = lines.find(l => Math.abs(l.y - y) < 5);
+                    if (!foundLine) {
+                        foundLine = { y: y, items: [] };
+                        lines.push(foundLine);
+                    }
+                    foundLine.items.push({ x: x, str: item.str });
+                });
+
+                // Ordena as linhas Y decrescentemente
+                lines.sort((a, b) => b.y - a.y);
+                
+                for (let line of lines) {
+                    // Ordena pela coordenada X
+                    line.items.sort((a, b) => a.x - b.x);
+                    const lineText = line.items.map(i => i.str).join(" ");
+                    fullText += lineText + "\n";
+                }
+            }
+            return fullText;
+        }
+
+        function parseNumberBR(str) {
+            if(!str) return 0;
+            return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+        }
+
+        function formatCurrencyBR(value) {
+            return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+        }
+
+        function processNotaFiscal(text) {
+            // Extrair Empresa Emissora
+            const empresaMatch = text.match(/RECEBEMOS DE\s+(.+?)\s+OS PRODUTOS/i);
+            let empresa = "Não identificada";
+            if (empresaMatch && empresaMatch[1]) empresa = empresaMatch[1].trim();
+
+            // Extrair Numero da NF
+            let numeroNF = "Não identificado";
+            const nfMatch = text.match(/N[º°oO]?\s*([\d\.]+)/i);
+            if (nfMatch && nfMatch[1]) {
+                numeroNF = nfMatch[1].trim();
+            }
+
+            // Extrair Destinatário (geralmente antes do segundo CNPJ na Danfe)
+            let destinatario = "Não identificado";
+            let cnpjsEncontrados = 0;
+            const linhas = text.split('\n');
+            const regexCNPJ = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/;
+            
+            for (let linha of linhas) {
+                if (regexCNPJ.test(linha)) {
+                    cnpjsEncontrados++;
+                    // O segundo CNPJ é tipicamente o do destinatário
+                    if (cnpjsEncontrados === 2) {
+                        let pedaco = linha.split(regexCNPJ)[0].trim();
+                        // Remover textos genéricos que possam aparecer
+                        pedaco = pedaco.replace(/NOME\/RAZÃO SOCIAL/i, '').trim();
+                        if (pedaco.length > 2) {
+                            destinatario = pedaco;
+                        }
+                    }
+                }
+            }
+            
+            // Fallback caso não tenha achado pelo segundo CNPJ
+            if (destinatario === "Não identificado" || cnpjsEncontrados < 2) {
+                const matchDestinatario = text.match(/DESTINATÁRIO\/REMETENTE[\s\S]*?NOME\/RAZÃO SOCIAL.*?\n(.*?)\s+\d{2}\.\d{3}/i);
+                if(matchDestinatario && matchDestinatario[1]) {
+                    destinatario = matchDestinatario[1].trim();
+                }
+            }
+
+            document.getElementById('companyName').textContent = empresa;
+            document.getElementById('companyName').dataset.rawName = empresa;
+            
+            document.getElementById('destinatarioName').textContent = destinatario;
+            document.getElementById('destinatarioName').dataset.rawName = destinatario;
+            
+            document.getElementById('nfNumber').textContent = numeroNF;
+            document.getElementById('nfNumber').dataset.rawNumber = numeroNF;
+
+            document.getElementById('infoSection').classList.remove('hidden');
+
+            // Regex para descrição
+            const productRegex = /(\S+)\s+(.*?)\s+(\d{8})\s+(\d{3,4})\s+(\d{4})\s+(\S+)\s+(\d+(?:\.\d+)?(?:,\d+)?)\s+(\d+(?:\.\d+)?(?:,\d+)?)\s+(\d+(?:\.\d+)?(?:,\d+)?)/g;
+            
+            let match;
+            const items = [];
+
+            while ((match = productRegex.exec(text)) !== null) {
+                let descricao = match[2].trim();
+                
+                if (!descricao || descricao.length < 2) {
+                    descricao = "Descrição não identificada";
+                }
+
+                const qtdOriginal = Math.round(parseNumberBR(match[7])); 
+                const valorUni = parseNumberBR(match[8]);
+                
+                const iteracoes = qtdOriginal > 0 ? qtdOriginal : 1;
+
+                for (let i = 0; i < iteracoes; i++) {
+                    items.push({
+                        descricao: descricao, 
+                        qtd: 1,
+                        valor_uni: valorUni,
+                        valor_total: valorUni
+                    });
+                }
+            }
+
+            if (items.length === 0) {
+                alert("Nenhum item encontrado. Tente um formato de nota válido.");
+            } else {
+                renderTable(items);
+            }
+        }
+
+        function renderTable(items) {
+            const tbody = document.getElementById('itemsTableBody');
+            tbody.innerHTML = '';
+            items.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                tr.innerHTML = `
+                    <td class="px-4 py-3 text-sm text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis max-w-xs" title="${item.descricao}">
+                        ${item.descricao}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-700">${item.qtd}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">R$ ${formatCurrencyBR(item.valor_uni)}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700 font-medium">R$ ${formatCurrencyBR(item.valor_total)}</td>
+                    <td class="px-4 py-3"><input type="text" class="w-full p-1 border rounded cham-input" placeholder="Ex: INC123"></td>
+                    <td class="px-4 py-3"><input type="text" class="w-full p-1 border rounded rat-input" placeholder="Ex: Depto TI"></td>
+                    <td class="px-4 py-3"><input type="text" class="w-full p-1 border rounded obs-input" placeholder="..."></td>
+                `;
+                tbody.appendChild(tr);
+            });
+            document.getElementById('tableContainer').classList.remove('hidden');
+        }
+
+        document.getElementById('generatePdfBtn').addEventListener('click', async () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('landscape');
+            
+            const empresa = document.getElementById('companyName').dataset.rawName || 'Não identificada';
+            const destinatario = document.getElementById('destinatarioName').dataset.rawName || 'Não identificada';
+            const nfNumber = document.getElementById('nfNumber').dataset.rawNumber || 'SemNumero';
+            
+            doc.setFontSize(16);
+            doc.text("Relatório de Rateio de Nota Fiscal", 14, 15);
+            doc.setFontSize(11);
+            doc.text(`Empresa Emissora: ${empresa}`, 14, 23);
+            doc.text(`Nota emitida para: ${destinatario}`, 14, 29);
+            doc.text(`NF Nº: ${nfNumber}`, 14, 35);
+
+            const tableRows = [];
+            const trs = document.querySelectorAll('#itemsTableBody tr');
+            trs.forEach(tr => {
+                const cols = tr.querySelectorAll('td');
+                const inputs = tr.querySelectorAll('input');
+                tableRows.push([
+                    cols[0].innerText, cols[1].innerText, cols[2].innerText, cols[3].innerText,
+                    inputs[0].value, inputs[1].value, inputs[2].value
+                ]);
+            });
+
+            doc.autoTable({
+                startY: 40,
+                head: [['PROD/ITEM', 'QNT', 'VALOR UNI', 'TOTAL', 'CHAMADO', 'RATEIO', 'OBS']],
+                body: tableRows,
+                styles: { fontSize: 8, cellPadding: 2 },
+                headStyles: { fillColor: [249, 115, 22] },
+                columnStyles: { 0: { cellWidth: 70 }, 4: { cellWidth: 30 }, 5: { cellWidth: 40 }, 6: { cellWidth: 40 } }
+            });
+            
+            // Formatando o nome do arquivo sugerido
+            const safeNF = nfNumber.replace(/[^0-9]/g, '');
+            const suggestedName = `Rateio_NF_${safeNF || 'SemNumero'}.pdf`;
+
+            try {
+                // Tenta usar a API nativa de acesso ao sistema de arquivos (funciona no Chrome/Edge modernos)
+                if (window.showSaveFilePicker) {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: suggestedName,
+                        types: [{
+                            description: 'Arquivo PDF',
+                            accept: { 'application/pdf': ['.pdf'] },
+                        }],
+                    });
+                    const writable = await handle.createWritable();
+                    const pdfBlob = doc.output('blob');
+                    await writable.write(pdfBlob);
+                    await writable.close();
+                } else {
+                    // Fallback para navegadores que não suportam a API (vai usar o comportamento padrão de download)
+                    doc.save(suggestedName);
+                }
+            } catch (err) {
+                // Se o erro for AbortError, significa que o usuário clicou em Cancelar. Não fazemos nada.
+                if (err.name !== 'AbortError') {
+                    console.error("Erro ao salvar o arquivo: ", err);
+                    doc.save(suggestedName); // Fallback de emergência
+                }
+            }
+        });
+
+        // Registrar o Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registrado com sucesso: ', registration.scope);
+                })
+                .catch(error => {
+                    console.log('Falha ao registrar o ServiceWorker: ', error);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
