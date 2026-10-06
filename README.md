@@ -1,6 +1,6 @@
-# NotaFácil NF
+# NotaFácil
 
-O **NotaFácil NF** é um sistema inteligente e 100% executado no navegador (sem necessidade de backend) para leitura de PDFs de Notas Fiscais (Danfe), fragmentação de itens por unidade e geração de relatórios de rateio.
+O **NotaFácil** é um sistema inteligente e 100% executado no navegador (sem necessidade de backend) para leitura de PDFs de Notas Fiscais (Danfe), fragmentação de itens por unidade e geração de relatórios de rateio.
 
 ## Como funciona?
 
@@ -22,13 +22,5 @@ O **NotaFácil NF** é um sistema inteligente e 100% executado no navegador (sem
 - **Extração via OCR/PDF.js**: Identificação de linhas através de agrupamento com tolerância Y.
 - **PWA (Progressive Web App)**: Pode ser instalado no seu computador ou celular como um aplicativo nativo.
 - **Totalmente Offline**: Após carregado a primeira vez, o processamento ocorre no seu computador, mantendo seus dados fiscais 100% seguros e privados.
-
-## Instalação (Deploy)
-
-Por ser uma aplicação estática, ela é perfeita para ser hospedada no **GitHub Pages**:
-
-1. Crie um repositório no seu GitHub.
-2. Faça o upload dos arquivos (`index.html`, `manifest.json`, `sw.js`, `favicon.svg`).
-3. Ative o GitHub Pages nas configurações do repositório apontando para a branch `main`.
 
 Desenvolvido por **Dan Martins**.
